@@ -1,0 +1,14 @@
+{
+    "name": "raiaccept/raiaccept_api_client",
+    "type": "library",
+    "description": "PHP SDK for RaiAccept payment gateway API",
+    "license": "OSL-3.0",
+    "scripts": {
+        "test": "phpunit --bootstrap vendor/autoload.php tests/tests.php"
+    },
+    "autoload": {
+        "psr-4": {
+            "RaiAccept\\RaiacceptApiClient\\" : "lib/"
+        }
+    }
+}
