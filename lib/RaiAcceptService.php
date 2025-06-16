@@ -49,7 +49,7 @@ class RaiAcceptService
             $response = $apiInstance->token($username, $password);
             $response_obj = $response['object'];
             $access_token = $response_obj->getIdToken();
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return null;
         }
         return $access_token;
@@ -60,7 +60,7 @@ class RaiAcceptService
         $apiInstance = new Api\RaiAcceptAPIApi($client);
         try {
             $result = $apiInstance->getOrderTransactions($access_token, $order_id);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return null;
         }
 
@@ -72,7 +72,7 @@ class RaiAcceptService
         $apiInstance = new Api\RaiAcceptAPIApi($client);
         try {
             $result = $apiInstance->getOrderDetails($access_token, $order_id);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return null;
         }
 
@@ -84,7 +84,7 @@ class RaiAcceptService
         $apiInstance = new Api\RaiAcceptAPIApi($client);
         try {
             $result = $apiInstance->getTransactionDetails($access_token, $order_id, $transaction_id);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return null;
         }
 
@@ -96,7 +96,7 @@ class RaiAcceptService
         $apiInstance = new Api\RaiAcceptAPIApi($client);
         try {
             $result = $apiInstance->refund($access_token, $order_id, $transaction_id, $request_obj);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return null;
         }
 
