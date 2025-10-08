@@ -24,7 +24,7 @@ class Card
     {
         $obj = new self();
         $obj->maskedCardNumber = $data['maskedCardNumber'];
-        $obj->cardHolderName = $data['cardHolderName'];
+        $obj->cardHolderName = $data['cardHolderName'] ?? '';
         $obj->type = $data['type'];
         $obj->issuerCountry = $data['issuerCountry'];
         $obj->cardToken = $data['cardToken'];
