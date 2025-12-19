@@ -22,15 +22,15 @@ class Address {
 
     public static function fromArray(array $data): self {
         $instance = new self();
-        $instance->addressStreet1 = $data['addressStreet1'] ?? null;
-        $instance->addressStreet2 = $data['addressStreet2'] ?? null;
-        $instance->addressStreet3 = $data['addressStreet3'] ?? null;
-        $instance->city = $data['city'] ?? null;
-        $instance->country = $data['country'] ?? null;
-        $instance->firstName = $data['firstName'] ?? null;
-        $instance->lastName = $data['lastName'] ?? null;
-        $instance->postalCode = $data['postalCode'] ?? null;
-        $instance->state = $data['state'] ?? null;
+        $instance->addressStreet1 = ($data['addressStreet1'] ?? '') !== '' ? $data['addressStreet1'] : null;
+        $instance->addressStreet2 = ($data['addressStreet2'] ?? '') !== '' ? $data['addressStreet2'] : null;
+        $instance->addressStreet3 = ($data['addressStreet3'] ?? '') !== '' ? $data['addressStreet3'] : null;
+        $instance->city = ($data['city'] ?? '') !== '' ? $data['city'] : null;
+        $instance->country = ($data['country'] ?? '') !== '' ? $data['country'] : null;
+        $instance->firstName = ($data['firstName'] ?? '') !== '' ? $data['firstName'] : null;
+        $instance->lastName = ($data['lastName'] ?? '') !== '' ? $data['lastName'] : null;
+        $instance->postalCode = ($data['postalCode'] ?? '') !== '' ? $data['postalCode'] : null;
+        $instance->state = ($data['state'] ?? '') !== '' ? $data['state'] : null;
         return $instance;
     }
 }
