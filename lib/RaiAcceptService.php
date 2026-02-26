@@ -164,13 +164,8 @@ class RaiAcceptService
     public static function refund($client, string $access_token, string $order_id, string $transaction_id, $request_obj)
     {
         $apiInstance = new Api\RaiAcceptAPIApi($client);
-        try {
-            $result = $apiInstance->refund($access_token, $order_id, $transaction_id, $request_obj);
-        } catch (\Exception $e) {
-            return null;
-        }
 
-        return $result;
+        return $apiInstance->refund($access_token, $order_id, $transaction_id, $request_obj);
     }
 
     public static function getPaidStatuses(): array {
