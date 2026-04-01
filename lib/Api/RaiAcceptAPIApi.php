@@ -73,15 +73,20 @@ class RaiAcceptAPIApi
                 'response' => $response,
             ];
         } catch (ApiException $e) {
-            switch ($e->getCode()) {
-                case 400:
+            $status = (int) $e->getCode();
+            $body   = $e->getResponseBody();
+            // Refusals and client errors may use 400, 403, 422, etc. — same ErrorResponse JSON shape.
+            if ( $status >= 400 && $status < 500 && is_string( $body ) && $body !== '' ) {
+                try {
                     $data = ObjectSerializer::deserialize(
-                        $e->getResponseBody(),
+                        $body,
                         $error_structure,
                         $e->getResponseHeaders()
                     );
-                    $e->setResponseObject($data);
-                    break;
+                    $e->setResponseObject( $data );
+                } catch ( \Throwable $t ) {
+                    // Body may not be ErrorResponse JSON (e.g. HTML proxy error).
+                }
             }
             throw $e;
         }
