@@ -59,19 +59,17 @@ class RaiAcceptService
         'Џ'=>'Dz','џ'=>'dz',
     ];
 
-    public static function transliterate(string $string)
+    public static function transliterate(string $string): string
     {
 	    if (function_exists('transliterator_transliterate')) {
-		    $out = transliterator_transliterate('Any-Latin', $string);
-		    if (is_string($out)) {
-			    return $out;
-		    }
+		    $out = transliterator_transliterate('Any-Latin; NFD; [:Nonspacing Mark:] Remove; NFC', $string);
+		    $string = is_string($out) ? $out : self::transliterateNonLatinFallback($string);
+	    } else {
+		    $string = self::transliterateNonLatinFallback($string);
 	    }
 
-	    $string = self::transliterateNonLatinFallback($string);
-	    $string = preg_replace('/[^\p{Latin}\p{N}\s\.\,\-\'\/@]/u', '', $string) ?? $string;
-
-	    // 4) Normalize whitespace
+	    $string = self::stripCombiningMarks($string);
+	    $string = self::sanitizeForGateway($string);
 	    $string = preg_replace('/\s+/u', ' ', $string) ?? $string;
 
 	    return trim($string);
@@ -79,12 +77,39 @@ class RaiAcceptService
 
 	private static function transliterateNonLatinFallback(string $s): string
 	{
-		// Early return for strings that only contain Latin characters and common punctuation
-		if (!preg_match('/[^\p{Latin}\p{N}\s\.\,\-\'\/@]/u', $s)) {
+		if (!preg_match('/[^\p{L}\d\s\'() .,#\/@-]/u', $s)) {
 			return $s;
 		}
 
 		return strtr($s, self::$transliterationMap);
+	}
+
+	private static function stripCombiningMarks(string $string): string
+	{
+		if (function_exists('transliterator_transliterate')) {
+			$out = transliterator_transliterate('NFD; [:Nonspacing Mark:] Remove; NFC', $string);
+			if (is_string($out)) {
+				return $out;
+			}
+		}
+
+		if (class_exists('Normalizer')) {
+			$decomposed = \Normalizer::normalize($string, \Normalizer::FORM_D);
+			if (is_string($decomposed)) {
+				$string = preg_replace('/\p{M}/u', '', $decomposed) ?? $decomposed;
+				$composed = \Normalizer::normalize($string, \Normalizer::FORM_C);
+				if (is_string($composed)) {
+					return $composed;
+				}
+			}
+		}
+
+		return preg_replace('/\p{M}/u', '', $string) ?? $string;
+	}
+
+	private static function sanitizeForGateway(string $string): string
+	{
+		return preg_replace('/[^\p{L}\d\s\'() .,#\/@-]/u', '', $string) ?? $string;
 	}
 
     public static function transliterate_and_limit_length(string $string, int $limit = 127)

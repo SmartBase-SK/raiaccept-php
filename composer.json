@@ -4,11 +4,19 @@
     "description": "PHP SDK for RaiAccept payment gateway API",
     "license": "OSL-3.0",
     "scripts": {
-        "test": "phpunit --bootstrap vendor/autoload.php tests/tests.php"
+        "test": "phpunit --configuration phpunit.xml.dist"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6"
     },
     "autoload": {
         "psr-4": {
             "Raiaccept\\RaiacceptApiClient\\" : "lib/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Raiaccept\\RaiacceptApiClient\\Tests\\": "tests/"
         }
     }
 }
