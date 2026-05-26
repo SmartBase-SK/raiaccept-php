@@ -61,6 +61,62 @@ class RaiAcceptService
 
     public static function transliterate(string $string): string
     {
+	    $string = self::normalizeUnicodeText($string);
+
+	    return self::sanitizeForFieldFormat($string, OrderFieldFormat::ADDRESS_LINE);
+    }
+
+    /**
+     * Sanitize and truncate a string for a specific OrderInput field profile.
+     */
+    public static function sanitize_order_field(string $string, string $format, int $limit = 127): ?string
+    {
+	    if ($format === OrderFieldFormat::EMAIL) {
+		    $string = self::normalizeEmailText($string);
+	    } else {
+		    $string = self::normalizeUnicodeText($string);
+		    $string = self::sanitizeForFieldFormat($string, $format);
+	    }
+
+	    $string = self::limitLength($string, $limit);
+
+	    if ($format === OrderFieldFormat::ADDRESS_LINE) {
+		    $string = str_replace(array('&', ';', '<', '>', '|', '\\'), ' ', $string);
+	    }
+
+	    $string = preg_replace('/\s+/u', ' ', $string) ?? $string;
+	    $string = trim($string);
+
+	    return $string === '' ? null : $string;
+    }
+
+    /**
+     * Check whether a value matches the OrderInput Swagger pattern for the given format.
+     */
+    public static function matches_order_field_pattern(string $value, string $format): bool
+    {
+	    if (!isset(OrderFieldFormat::VALIDATION_PATTERNS[$format])) {
+		    return true;
+	    }
+
+	    return (bool) preg_match(OrderFieldFormat::VALIDATION_PATTERNS[$format], $value);
+    }
+
+    public static function transliterate_and_limit_length(string $string, int $limit = 127)
+    {
+	    // deprecated, use sanitize_order_field() for improved sanitization
+	    $string = self::normalizeUnicodeText($string);
+	    $string = preg_replace('/[^\p{L}\d\s\'() .,#\/@-]/u', '', $string) ?? $string;
+	    $string = self::limitLength($string, $limit);
+	    $string = str_replace(array('&', ';', '<', '>', '|', '`', '\\'), ' ', $string);
+	    $string = preg_replace('/\s+/u', ' ', $string) ?? $string;
+	    $string = trim($string);
+
+	    return $string === '' ? null : $string;
+    }
+
+	private static function normalizeUnicodeText(string $string): string
+	{
 	    if (function_exists('transliterator_transliterate')) {
 		    $out = transliterator_transliterate('Any-Latin; NFD; [:Nonspacing Mark:] Remove; NFC', $string);
 		    $string = is_string($out) ? $out : self::transliterateNonLatinFallback($string);
@@ -69,15 +125,63 @@ class RaiAcceptService
 	    }
 
 	    $string = self::stripCombiningMarks($string);
-	    $string = self::sanitizeForGateway($string);
 	    $string = preg_replace('/\s+/u', ' ', $string) ?? $string;
 
 	    return trim($string);
-    }
+	}
+
+	private static function normalizeEmailText(string $string): string
+	{
+	    $string = trim($string);
+
+	    if (class_exists('Normalizer')) {
+		    $normalized = \Normalizer::normalize($string, \Normalizer::FORM_C);
+		    if (is_string($normalized)) {
+			    return $normalized;
+		    }
+	    }
+
+	    return $string;
+	}
+
+	private static function sanitizeForFieldFormat(string $string, string $format): string
+	{
+	    switch ($format) {
+		    case OrderFieldFormat::PERSON_NAME:
+			    return preg_replace("/[^\p{L}\s'.\x60-]/u", '', $string) ?? $string;
+		    case OrderFieldFormat::ADDRESS_LINE:
+			    return preg_replace("/[^\p{L}\d\s'\x60() .,#\/-]/u", '', $string) ?? $string;
+		    case OrderFieldFormat::POSTAL_CODE:
+			    return preg_replace('/[^a-zA-Z0-9 -]/', '', $string) ?? $string;
+		    case OrderFieldFormat::MERCHANT_REFERENCE:
+			    return preg_replace('/[^a-zA-Z0-9_-]/', '', $string) ?? $string;
+		    case OrderFieldFormat::FREE_TEXT:
+			    return preg_replace('/[\p{C}]/u', '', $string) ?? $string;
+		    default:
+			    return preg_replace("/[^\p{L}\d\s'\x60() .,#\/-]/u", '', $string) ?? $string;
+	    }
+	}
+
+	private static function limitLength(string $string, int $limit): string
+	{
+	    if (function_exists('mb_strimwidth')) {
+		    if (mb_strlen($string) > $limit) {
+			    return mb_strimwidth($string, 0, $limit);
+		    }
+
+		    return $string;
+	    }
+
+	    if (strlen($string) > $limit) {
+		    return substr($string, 0, $limit);
+	    }
+
+	    return $string;
+	}
 
 	private static function transliterateNonLatinFallback(string $s): string
 	{
-		if (!preg_match('/[^\p{L}\d\s\'() .,#\/@-]/u', $s)) {
+		if (!preg_match('/[^\p{Latin}\p{N}\s.\'-]/u', $s)) {
 			return $s;
 		}
 
@@ -107,34 +211,32 @@ class RaiAcceptService
 		return preg_replace('/\p{M}/u', '', $string) ?? $string;
 	}
 
-	private static function sanitizeForGateway(string $string): string
-	{
-		return preg_replace('/[^\p{L}\d\s\'() .,#\/@-]/u', '', $string) ?? $string;
-	}
-
-    public static function transliterate_and_limit_length(string $string, int $limit = 127)
+    public static function clean_phone_number(string $phone_number): string
     {
-        $string = self::transliterate($string);
+	    $phone_number = trim($phone_number);
+	    if ($phone_number === '') {
+		    return '';
+	    }
 
-        if (function_exists('mb_strimwidth')) {
-            if (mb_strlen($string) > $limit) {
-                $string = mb_strimwidth($string, 0, $limit);
-            }
-        } else {
-            if (strlen($string) > $limit) {
-                $string = substr($string, 0, $limit);
-            }
-        }
-	    $string = str_replace( array('&' , ';', '<', '>', '|', '`' ,'\\' ), ' ', $string);
+	    if (strpos($phone_number, '00') === 0) {
+		    $phone_number = '+' . substr($phone_number, 2);
+	    }
 
-        return $string === '' ? null : $string;
-    }
+	    if ($phone_number[0] === '+') {
+		    $phone_number = '+' . preg_replace('/\D/', '', substr($phone_number, 1));
+	    } else {
+		    $phone_number = preg_replace('/\D/', '', $phone_number);
+	    }
 
-    public static function clean_phone_number(string $phone_number)
-    {
-        $phone_number = preg_replace('/(?!\+)\D/', '', $phone_number);
-		$phone_number = substr($phone_number, 0, 1) . str_replace('+', '', substr($phone_number, 1, 14));
-		return $phone_number;
+	    if (strlen($phone_number) > 16) {
+		    $phone_number = substr($phone_number, 0, 16);
+	    }
+
+	    if (!preg_match(OrderFieldFormat::PHONE_VALIDATION_PATTERN, $phone_number)) {
+		    return '';
+	    }
+
+	    return $phone_number;
     }
 
     public static function retrieve_access_token_with_credentials($client, $username, $password)

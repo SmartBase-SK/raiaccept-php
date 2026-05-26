@@ -3,132 +3,111 @@
 namespace Raiaccept\RaiacceptApiClient\Tests;
 
 use PHPUnit\Framework\TestCase;
+use Raiaccept\RaiacceptApiClient\OrderFieldFormat;
 use Raiaccept\RaiacceptApiClient\RaiAcceptService;
 
 class RaiAcceptServiceTest extends TestCase
 {
-    private const GATEWAY_ADDRESS_PATTERN = '/^[\p{L}\d\'() .,#\/-]*$/u';
-
-    public function testPrecomposedSerbianMerchantAddressIsUnchanged(): void
+    public function testSanitizeOrderField(): void
     {
-        $input = 'Bulevar kralja Petra I 10';
-
-        $result = RaiAcceptService::transliterate_and_limit_length($input, 50);
-
-        $this->assertSame($input, $result);
-        $this->assertMatchesRegularExpression(self::GATEWAY_ADDRESS_PATTERN, $result);
-    }
-
-    public function testSerbianLatinAddressWithDiacriticsIsGatewayValid(): void
-    {
-        $input = 'Ulica Vožda Karađorđa 5';
-
-        $result = RaiAcceptService::transliterate_and_limit_length($input, 50);
-
-        $this->assertSame('Ulica Vozda Karađorđa 5', $result);
-        $this->assertStringContainsString('đ', $result);
-        $this->assertMatchesRegularExpression(self::GATEWAY_ADDRESS_PATTERN, $result);
-    }
-
-    /**
-     * @dataProvider addressGatewayComplianceProvider
-     */
-    public function testAddressOutputMatchesGatewayCharset(string $input, string $expected): void
-    {
-        $result = RaiAcceptService::transliterate_and_limit_length($input, 50);
-
-        $this->assertSame($expected, $result);
-        $this->assertMatchesRegularExpression(self::GATEWAY_ADDRESS_PATTERN, $result);
-    }
-
-    public function addressGatewayComplianceProvider(): array
-    {
-        return [
-            'precomposed serbian merchant address' => [
-                'Bulevar kralja Petra I 10',
-                'Bulevar kralja Petra I 10',
-            ],
-            'combining circumflex in serbian address' => [
-                'Bulevar kral' . "\u{0302}" . 'a Petra I 10',
-                'Bulevar krala Petra I 10',
-            ],
-            'cyrillic serbian address' => [
-                'Бulevar краља Петра I 10',
-                'Bulevar krala Petra I 10',
-            ],
-            'gateway punctuation in address' => [
-                "Test #5 (unit) 1/2 - 'quote'",
-                "Test #5 (unit) 1/2 - 'quote'",
-            ],
+        $test_cases = [
+            // format, limit, input, expected
+            [OrderFieldFormat::PERSON_NAME, 32, 'John3 (Jr.) #1', 'John Jr.'],
+            [OrderFieldFormat::PERSON_NAME, 32, "O'Brien-Smith", "O'Brien-Smith"],
+            [OrderFieldFormat::PERSON_NAME, 32, 'Јован', 'Jovan'],
+            [OrderFieldFormat::ADDRESS_LINE, 50, 'Bulevar kral' . "\u{0302}" . 'a Petra I 10', 'Bulevar krala Petra I 10'],
+            [OrderFieldFormat::ADDRESS_LINE, 50, 'Bulevar kralja Petra I 10', 'Bulevar kralja Petra I 10'],
+            [OrderFieldFormat::ADDRESS_LINE, 50, 'Булевар краља Петра I 10', 'Bulevar krala Petra I 10'],
+            [OrderFieldFormat::ADDRESS_LINE, 50, 'Ulica Vožda Karađorđa 5', 'Ulica Vozda Karađorđa 5'],
+            [OrderFieldFormat::ADDRESS_LINE, 50, "Test #5 (unit) 1/2 - 'quote'", "Test #5 (unit) 1/2 - 'quote'"],
+            [OrderFieldFormat::ADDRESS_LINE, 50, 'Булевар краља 10', 'Bulevar krala 10'],
+            [OrderFieldFormat::POSTAL_CODE, 16, '11000-SK #1', '11000-SK 1'],
+            [OrderFieldFormat::POSTAL_CODE, 16, '110 00', '110 00'],
+            [OrderFieldFormat::EMAIL, 255, 'user+tag@example.com', 'user+tag@example.com'],
+            [OrderFieldFormat::EMAIL, 255, 'test@example.org', 'test@example.org'],
+            [OrderFieldFormat::MERCHANT_REFERENCE, 150, 'raiaccept__42__abc-123', 'raiaccept__42__abc-123'],
+            [OrderFieldFormat::MERCHANT_REFERENCE, 150, 'ORD-1001', 'ORD-1001'],
+            [OrderFieldFormat::FREE_TEXT, 100, "Album\u{0007} name", 'Album name'],
         ];
+
+        foreach ($test_cases as [$format, $limit, $input, $expected]) {
+            $result = RaiAcceptService::sanitize_order_field($input, $format, $limit);
+
+            $this->assertSame($expected, $result);
+
+            if ($result !== null) {
+                $this->assertTrue(
+                    RaiAcceptService::matches_order_field_pattern($result, $format),
+                    sprintf('Format %s produced invalid value: [%s]', $format, $result)
+                );
+            }
+        }
     }
 
-    public function testCombiningCircumflexInSerbianAddressIsRemoved(): void
+    public function testLegacyTransliterateAndLimitLength(): void
     {
-        $input = 'Bulevar kral' . "\u{0302}" . 'a Petra I 10';
+        $test_cases = [
+            // limit, input, expected
+            [50, 'Bulevar kralja Petra I 10', 'Bulevar kralja Petra I 10'],
+            [50, 'Bulevar kral' . "\u{0302}" . 'a Petra I 10', 'Bulevar krala Petra I 10'],
+            [50, 'Булевар краља Петра I 10', 'Bulevar krala Petra I 10'],
+            [50, "Test #5 (unit) 1/2 - 'quote'", "Test #5 (unit) 1/2 - 'quote'"],
+            [50, "Street & Name; <script>|`\\", 'Street Name script'],
+            [255, 'foo@bar.com', 'foo@bar.com'],
+        ];
 
-        $result = RaiAcceptService::transliterate_and_limit_length($input, 50);
+        foreach ($test_cases as [$limit, $input, $expected]) {
+            $result = RaiAcceptService::transliterate_and_limit_length($input, $limit);
 
-        $this->assertSame('Bulevar krala Petra I 10', $result);
-        $this->assertMatchesRegularExpression(self::GATEWAY_ADDRESS_PATTERN, $result);
+            $this->assertSame($expected, $result);
+
+            if ($result !== null) {
+                $this->assertTrue(
+                    RaiAcceptService::matches_order_field_pattern($result, OrderFieldFormat::ADDRESS_LINE)
+                        || RaiAcceptService::matches_order_field_pattern($result, OrderFieldFormat::EMAIL),
+                    sprintf('Legacy sanitization produced unexpected value: [%s]', $result)
+                );
+            }
+        }
     }
 
-    public function testCyrillicSerbianAddressTransliteratesToLatin(): void
+    public function testTransliterate(): void
     {
-        $input = 'Бulevar краља Петра I 10';
+        $test_cases = [
+            // input, expected
+            ['  Bulevar   kralja   Petra   I   10  ', 'Bulevar kralja Petra I 10'],
+        ];
 
-        $result = RaiAcceptService::transliterate_and_limit_length($input, 50);
-
-        $this->assertSame('Bulevar krala Petra I 10', $result);
-        $this->assertMatchesRegularExpression(self::GATEWAY_ADDRESS_PATTERN, $result);
+        foreach ($test_cases as [$input, $expected]) {
+            $this->assertSame($expected, RaiAcceptService::transliterate($input));
+        }
     }
 
-    public function testGatewayAllowedPunctuationIsPreserved(): void
+    public function testCleanPhoneNumber(): void
     {
-        $input = "Test #5 (unit) 1/2 - 'quote'";
+        $test_cases = [
+            // input, expected
+            ['0908 396 747', '0908396747'],
+            ['00421908123456', '+421908123456'],
+            ['123', ''],
+        ];
 
-        $result = RaiAcceptService::transliterate_and_limit_length($input, 50);
-
-        $this->assertSame("Test #5 (unit) 1/2 - 'quote'", $result);
-        $this->assertMatchesRegularExpression(self::GATEWAY_ADDRESS_PATTERN, $result);
+        foreach ($test_cases as [$input, $expected]) {
+            $this->assertSame($expected, RaiAcceptService::clean_phone_number($input));
+        }
     }
 
-    public function testEmailAtSignIsPreserved(): void
-    {
-        $result = RaiAcceptService::transliterate_and_limit_length('foo@bar.com', 255);
-
-        $this->assertSame('foo@bar.com', $result);
-    }
-
-    public function testUnsupportedCharactersAreStripped(): void
-    {
-        $input = "Street & Name; <script>|`\\";
-
-        $result = RaiAcceptService::transliterate_and_limit_length($input, 50);
-
-        $this->assertSame('Street Name script', $result);
-        $this->assertMatchesRegularExpression(self::GATEWAY_ADDRESS_PATTERN, $result);
-    }
-
-    public function testWhitespaceIsNormalized(): void
-    {
-        $input = "  Bulevar   kralja   Petra   I   10  ";
-
-        $result = RaiAcceptService::transliterate($input);
-
-        $this->assertSame('Bulevar kralja Petra I 10', $result);
-    }
-
-    public function testEmptyStringReturnsNullFromTransliterateAndLimitLength(): void
+    public function testLegacyTransliterateAndLimitLengthReturnsNullForWhitespace(): void
     {
         $this->assertNull(RaiAcceptService::transliterate_and_limit_length('   ', 50));
     }
 
-    public function testLengthLimitIsApplied(): void
+    public function testLegacyTransliterateAndLimitLengthAppliesMaxLength(): void
     {
-        $input = 'Bulevar kralja Petra I 10 extra long suffix';
-
-        $result = RaiAcceptService::transliterate_and_limit_length($input, 20);
+        $result = RaiAcceptService::transliterate_and_limit_length(
+            'Bulevar kralja Petra I 10 extra long suffix',
+            20
+        );
 
         $this->assertLessThanOrEqual(20, mb_strlen($result));
     }
