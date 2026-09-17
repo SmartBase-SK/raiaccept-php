@@ -1,8 +1,6 @@
 # Changelog
 
-## 2.0.0-beta
-
-Pre-release for manual QA. Stable `2.0.0` will be tagged after sandbox/production validation.
+## 2.0.0
 
 ### Breaking changes
 

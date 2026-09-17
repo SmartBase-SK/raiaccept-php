@@ -4,7 +4,7 @@ PHP SDK for RaiAccept payment gateway.
 
 - **Github repository**: <https://github.com/SmartBase-SK/raiaccept-php/>
 
-## Authentication (2.0.0-beta+)
+## Authentication (2.0.0+)
 
 The SDK uses the RaiAccept Auth Service with access and refresh tokens:
 
