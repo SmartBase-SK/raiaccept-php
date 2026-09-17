@@ -2,6 +2,11 @@
 
 namespace Raiaccept\RaiacceptApiClient;
 
+use Raiaccept\RaiacceptApiClient\Auth\AuthClient;
+use Raiaccept\RaiacceptApiClient\Auth\AuthTokenManager;
+use Raiaccept\RaiacceptApiClient\Auth\TokenStorage;
+use Raiaccept\RaiacceptApiClient\Model\IntegrationContext;
+
 class RaiAcceptService
 {
     public const STATUS_PENDING = "PENDING";
@@ -239,17 +244,28 @@ class RaiAcceptService
 	    return $phone_number;
     }
 
-    public static function retrieve_access_token_with_credentials($client, $username, $password)
-    {
-        $apiInstance = new Api\RaiAcceptAPIApi($client);
+    public static function get_access_token(
+        $client,
+        string $username,
+        string $password,
+        IntegrationContext $integrationContext,
+        TokenStorage $storage
+    ): ?string {
         try {
-            $response = $apiInstance->token($username, $password);
-            $response_obj = $response['object'];
-            $access_token = $response_obj->getIdToken();
+            $authClient = new AuthClient($client);
+            $manager = new AuthTokenManager($authClient, $storage);
+
+            return $manager->getAccessToken($username, $password, $integrationContext);
         } catch (\Exception $e) {
             return null;
         }
-        return $access_token;
+    }
+
+    public static function token_logout($client, string $refreshToken): bool
+    {
+        $authClient = new AuthClient($client);
+
+        return $authClient->logout($refreshToken);
     }
 
     public static function get_order_transactions($client, string $access_token, string $order_id)
