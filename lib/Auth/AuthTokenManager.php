@@ -44,31 +44,37 @@ class AuthTokenManager
         string $password,
         IntegrationContext $integrationContext
     ): ?string {
-        $now = time();
-        $stored = $this->storage->get();
-
-        if ($stored !== null && $stored->isAccessTokenValid($now, $this->accessTokenBufferSeconds)) {
-            return $stored->accessToken;
-        }
-
-        if ($stored !== null && $stored->isRefreshTokenValid($now)) {
-            try {
-                $refreshResponse = $this->authClient->refresh($stored->refreshToken, $integrationContext);
-                $tokens = $stored->withRefreshedAccess($refreshResponse);
-                $this->storage->save($tokens);
-
-                return $tokens->accessToken;
-            } catch (\Exception $e) {
-                $this->storage->clear();
-            }
-        }
-
         try {
+            $now = time();
+            $stored = $this->storage->get();
+
+            if ($stored !== null && ! $stored->matchesIdentity($username, $integrationContext)) {
+                $this->storage->clear();
+                $stored = null;
+            }
+
+            if ($stored !== null && $stored->isAccessTokenValid($now, $this->accessTokenBufferSeconds)) {
+                return $stored->accessToken;
+            }
+
+            if ($stored !== null && $stored->isRefreshTokenValid($now)) {
+                try {
+                    $refreshResponse = $this->authClient->refresh($stored->refreshToken, $integrationContext);
+                    $tokens = $stored->withRefreshedAccess($refreshResponse);
+                    $this->storage->save($tokens);
+
+                    return $tokens->accessToken;
+                } catch (\Throwable $e) {
+                    $this->storage->clear();
+                }
+            }
+
             $tokens = $this->authClient->login($username, $password, $integrationContext);
+            $tokens->bindIdentity($username, $integrationContext);
             $this->storage->save($tokens);
 
             return $tokens->accessToken;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return null;
         }
     }

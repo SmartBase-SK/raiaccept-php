@@ -2,6 +2,8 @@
 
 namespace Raiaccept\RaiacceptApiClient;
 
+use Raiaccept\RaiacceptApiClient\ApiException;
+
 class WpCurlClient
 {
     /**
@@ -42,7 +44,7 @@ class WpCurlClient
             $error = $response->get_error_message();
             $logger->info('Response error: ' . $error);
 
-            return $error;
+            throw new ApiException($error, 0, null, null);
         }
 
         // Extract response components

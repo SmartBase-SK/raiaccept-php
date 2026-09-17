@@ -256,7 +256,7 @@ class RaiAcceptService
             $manager = new AuthTokenManager($authClient, $storage);
 
             return $manager->getAccessToken($username, $password, $integrationContext);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return null;
         }
     }

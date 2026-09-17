@@ -13,11 +13,11 @@ use Raiaccept\RaiacceptApiClient\Model\RefreshResponse;
 
 class AuthTokenManagerTest extends TestCase
 {
-    private function integrationContext(): IntegrationContext
+    private function integrationContext(string $version = '1.2.0'): IntegrationContext
     {
         return new IntegrationContext('PLUGIN', [
             'name' => 'RaiAccept WooCommerce',
-            'version' => '1.2.0',
+            'version' => $version,
             'vendor' => 'SmartBase',
             'environmentName' => 'WooCommerce',
             'environmentVersion' => '9.0.0',
@@ -43,10 +43,26 @@ class AuthTokenManagerTest extends TestCase
         $this->assertFalse($tokens->isAccessTokenValid($now + 250, 60));
     }
 
-    public function testAuthTokensWithRefreshedAccess(): void
+    public function testAuthTokensIdentityBinding(): void
+    {
+        $tokens = AuthTokens::fromLoginResponse($this->loginResponse(), time());
+        $context = $this->integrationContext();
+
+        $this->assertFalse($tokens->matchesIdentity('user', $context));
+
+        $tokens->bindIdentity('user', $context);
+
+        $this->assertTrue($tokens->matchesIdentity('user', $context));
+        $this->assertFalse($tokens->matchesIdentity('other-user', $context));
+        $this->assertFalse($tokens->matchesIdentity('user', $this->integrationContext('2.0.0')));
+    }
+
+    public function testAuthTokensWithRefreshedAccessPreservesIdentity(): void
     {
         $now = 1_700_000_000;
         $stored = AuthTokens::fromLoginResponse($this->loginResponse(), $now);
+        $stored->bindIdentity('user', $this->integrationContext());
+
         $refreshResponse = new RefreshResponse();
         $refreshResponse->accessToken = 'access-2';
         $refreshResponse->accessTokenExpiresIn = 300;
@@ -54,20 +70,21 @@ class AuthTokenManagerTest extends TestCase
         $refreshed = $stored->withRefreshedAccess($refreshResponse, $now + 400);
 
         $this->assertSame('access-2', $refreshed->accessToken);
-        $this->assertSame($now + 700, $refreshed->accessTokenExpiresAt);
-        $this->assertSame('refresh-1', $refreshed->refreshToken);
-        $this->assertSame($now + 86400, $refreshed->refreshTokenExpiresAt);
+        $this->assertSame($stored->ownerKey, $refreshed->ownerKey);
+        $this->assertSame($stored->contextKey, $refreshed->contextKey);
+        $this->assertTrue($refreshed->matchesIdentity('user', $this->integrationContext()));
     }
 
     public function testAuthTokensRoundTripArray(): void
     {
         $tokens = AuthTokens::fromLoginResponse($this->loginResponse(), 1_700_000_000);
+        $tokens->bindIdentity('user', $this->integrationContext());
         $restored = AuthTokens::fromArray($tokens->toArray());
 
         $this->assertSame($tokens->accessToken, $restored->accessToken);
-        $this->assertSame($tokens->accessTokenExpiresAt, $restored->accessTokenExpiresAt);
-        $this->assertSame($tokens->refreshToken, $restored->refreshToken);
-        $this->assertSame($tokens->refreshTokenExpiresAt, $restored->refreshTokenExpiresAt);
+        $this->assertSame($tokens->ownerKey, $restored->ownerKey);
+        $this->assertSame($tokens->contextKey, $restored->contextKey);
+        $this->assertTrue($restored->matchesIdentity('user', $this->integrationContext()));
     }
 
     public function testInMemoryTokenStorage(): void
@@ -75,7 +92,7 @@ class AuthTokenManagerTest extends TestCase
         $storage = new InMemoryTokenStorage();
         $this->assertNull($storage->get());
 
-        $tokens = AuthTokens::fromLoginResponse($this->loginResponse(), 1_700_000_000);
+        $tokens = $this->boundTokens();
         $storage->save($tokens);
 
         $this->assertSame('access-1', $storage->get()->accessToken);
@@ -87,7 +104,7 @@ class AuthTokenManagerTest extends TestCase
     public function testManagerReturnsCachedAccessToken(): void
     {
         $storage = new InMemoryTokenStorage();
-        $storage->save(AuthTokens::fromLoginResponse($this->loginResponse(), time()));
+        $storage->save($this->boundTokens());
 
         $authClient = $this->createMock(AuthClient::class);
         $authClient->expects($this->never())->method('login');
@@ -99,10 +116,54 @@ class AuthTokenManagerTest extends TestCase
         $this->assertSame('access-1', $token);
     }
 
+    public function testManagerIgnoresCachedTokenForDifferentUsername(): void
+    {
+        $storage = new InMemoryTokenStorage();
+        $storage->save($this->boundTokens());
+
+        $authClient = $this->createMock(AuthClient::class);
+        $authClient->expects($this->never())->method('refresh');
+        $authClient->expects($this->once())
+            ->method('login')
+            ->with('other-user', 'pass', $this->integrationContext())
+            ->willReturnCallback(function ($username, $password, $context) {
+                return AuthTokens::fromLoginResponse($this->loginResponse('access-other'), time())
+                    ->bindIdentity($username, $context);
+            });
+
+        $manager = new AuthTokenManager($authClient, $storage);
+        $token = $manager->getAccessToken('other-user', 'pass', $this->integrationContext());
+
+        $this->assertSame('access-other', $token);
+        $this->assertTrue($storage->get()->matchesIdentity('other-user', $this->integrationContext()));
+    }
+
+    public function testManagerIgnoresCachedTokenForDifferentIntegrationContext(): void
+    {
+        $storage = new InMemoryTokenStorage();
+        $storage->save($this->boundTokens());
+
+        $newContext = $this->integrationContext('2.0.0');
+        $authClient = $this->createMock(AuthClient::class);
+        $authClient->expects($this->never())->method('refresh');
+        $authClient->expects($this->once())
+            ->method('login')
+            ->willReturnCallback(function ($username, $password, $context) {
+                return AuthTokens::fromLoginResponse($this->loginResponse('access-new-context'), time())
+                    ->bindIdentity($username, $context);
+            });
+
+        $manager = new AuthTokenManager($authClient, $storage);
+        $token = $manager->getAccessToken('user', 'pass', $newContext);
+
+        $this->assertSame('access-new-context', $token);
+        $this->assertTrue($storage->get()->matchesIdentity('user', $newContext));
+    }
+
     public function testManagerRefreshesExpiredAccessToken(): void
     {
         $now = time();
-        $stored = AuthTokens::fromLoginResponse($this->loginResponse(), $now - 400);
+        $stored = $this->boundTokens($now - 400);
         $storage = new InMemoryTokenStorage();
         $storage->save($stored);
 
@@ -122,12 +183,13 @@ class AuthTokenManagerTest extends TestCase
 
         $this->assertSame('access-refreshed', $token);
         $this->assertSame('access-refreshed', $storage->get()->accessToken);
+        $this->assertTrue($storage->get()->matchesIdentity('user', $this->integrationContext()));
     }
 
     public function testManagerLogoutRevokesTokenAndClearsStorage(): void
     {
         $storage = new InMemoryTokenStorage();
-        $storage->save(AuthTokens::fromLoginResponse($this->loginResponse(), time()));
+        $storage->save($this->boundTokens());
 
         $authClient = $this->createMock(AuthClient::class);
         $authClient->expects($this->once())
@@ -157,7 +219,7 @@ class AuthTokenManagerTest extends TestCase
     public function testManagerFallsBackToLoginWhenRefreshFails(): void
     {
         $now = time();
-        $stored = AuthTokens::fromLoginResponse($this->loginResponse(), $now - 400);
+        $stored = $this->boundTokens($now - 400);
         $storage = new InMemoryTokenStorage();
         $storage->save($stored);
 
@@ -167,12 +229,54 @@ class AuthTokenManagerTest extends TestCase
             ->willThrowException(new \Exception('refresh failed'));
         $authClient->expects($this->once())
             ->method('login')
-            ->willReturn(AuthTokens::fromLoginResponse($this->loginResponse('access-new'), $now));
+            ->willReturnCallback(function ($username, $password, $context) use ($now) {
+                return AuthTokens::fromLoginResponse($this->loginResponse('access-new'), $now)
+                    ->bindIdentity($username, $context);
+            });
 
         $manager = new AuthTokenManager($authClient, $storage);
         $token = $manager->getAccessToken('user', 'pass', $this->integrationContext());
 
         $this->assertSame('access-new', $token);
+    }
+
+    public function testManagerReturnsNullWhenAuthClientThrowsTypeError(): void
+    {
+        $storage = new InMemoryTokenStorage();
+        $authClient = $this->createMock(AuthClient::class);
+        $authClient->expects($this->once())
+            ->method('login')
+            ->willThrowException(new \TypeError('transport failure'));
+
+        $manager = new AuthTokenManager($authClient, $storage);
+
+        $this->assertNull($manager->getAccessToken('user', 'pass', $this->integrationContext()));
+    }
+
+    public function testLegacyStoredTokensWithoutIdentityTriggerLogin(): void
+    {
+        $storage = new InMemoryTokenStorage();
+        $storage->save(AuthTokens::fromLoginResponse($this->loginResponse(), time()));
+
+        $authClient = $this->createMock(AuthClient::class);
+        $authClient->expects($this->never())->method('refresh');
+        $authClient->expects($this->once())
+            ->method('login')
+            ->willReturnCallback(function ($username, $password, $context) {
+                return AuthTokens::fromLoginResponse($this->loginResponse('access-rebound'), time())
+                    ->bindIdentity($username, $context);
+            });
+
+        $manager = new AuthTokenManager($authClient, $storage);
+        $token = $manager->getAccessToken('user', 'pass', $this->integrationContext());
+
+        $this->assertSame('access-rebound', $token);
+    }
+
+    private function boundTokens(?int $now = null): AuthTokens
+    {
+        return AuthTokens::fromLoginResponse($this->loginResponse(), $now ?? time())
+            ->bindIdentity('user', $this->integrationContext());
     }
 
     private function loginResponse(string $accessToken = 'access-1'): LoginResponse

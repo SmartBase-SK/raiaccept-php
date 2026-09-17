@@ -8,6 +8,8 @@ class AuthTokens
     public int $accessTokenExpiresAt;
     public string $refreshToken;
     public int $refreshTokenExpiresAt;
+    public string $ownerKey = '';
+    public string $contextKey = '';
 
     public static function fromLoginResponse(LoginResponse $response, ?int $now = null): self
     {
@@ -21,6 +23,39 @@ class AuthTokens
         return $obj;
     }
 
+    public function bindIdentity(string $username, IntegrationContext $integrationContext): self
+    {
+        $this->ownerKey = self::computeOwnerKey($username);
+        $this->contextKey = self::computeContextKey($integrationContext);
+
+        return $this;
+    }
+
+    public function matchesIdentity(string $username, IntegrationContext $integrationContext): bool
+    {
+        if ($this->ownerKey === '' || $this->contextKey === '') {
+            return false;
+        }
+
+        return $this->ownerKey === self::computeOwnerKey($username)
+            && $this->contextKey === self::computeContextKey($integrationContext);
+    }
+
+    public static function computeOwnerKey(string $username): string
+    {
+        return hash('sha256', $username);
+    }
+
+    public static function computeContextKey(IntegrationContext $integrationContext): string
+    {
+        $payload = json_encode($integrationContext->toArray());
+        if ($payload === false) {
+            return '';
+        }
+
+        return hash('sha256', $payload);
+    }
+
     public function withRefreshedAccess(RefreshResponse $response, ?int $now = null): self
     {
         $now = $now ?? time();
@@ -29,6 +64,8 @@ class AuthTokens
         $obj->accessTokenExpiresAt = $now + $response->accessTokenExpiresIn;
         $obj->refreshToken = $this->refreshToken;
         $obj->refreshTokenExpiresAt = $this->refreshTokenExpiresAt;
+        $obj->ownerKey = $this->ownerKey;
+        $obj->contextKey = $this->contextKey;
 
         return $obj;
     }
@@ -57,6 +94,8 @@ class AuthTokens
             'accessTokenExpiresAt' => $this->accessTokenExpiresAt,
             'refreshToken' => $this->refreshToken,
             'refreshTokenExpiresAt' => $this->refreshTokenExpiresAt,
+            'ownerKey' => $this->ownerKey,
+            'contextKey' => $this->contextKey,
         ];
     }
 
@@ -67,6 +106,8 @@ class AuthTokens
         $obj->accessTokenExpiresAt = (int) $data['accessTokenExpiresAt'];
         $obj->refreshToken = $data['refreshToken'];
         $obj->refreshTokenExpiresAt = (int) $data['refreshTokenExpiresAt'];
+        $obj->ownerKey = $data['ownerKey'] ?? '';
+        $obj->contextKey = $data['contextKey'] ?? '';
 
         return $obj;
     }
