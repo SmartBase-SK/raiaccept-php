@@ -9,9 +9,6 @@ use Raiaccept\RaiacceptApiClient\Request;
 
 class RaiAcceptAPIApi
 {
-    public const AUTH_URL = 'https://authenticate.raiaccept.com';
-    public const AUTH_FLOW = 'USER_PASSWORD_AUTH';
-    public const AUTH_CLIENT_ID = 'kr2gs4117arvbnaperqff5dml';
     public const API_URL = 'https://trapi.raiaccept.com';
 
     public const ACCEPTED_LANGUAGES = [
@@ -92,14 +89,6 @@ class RaiAcceptAPIApi
         }
     }
 
-    public static function getAuthRequestHeaders()
-    {
-        return array(
-            'Content-Type' => 'application/x-amz-json-1.1',
-            'X-Amz-Target' => 'AWSCognitoIdentityProviderService.InitiateAuth',
-        );
-    }
-
     public static function json_decode(...$args)
     {
         return json_decode(...$args);
@@ -123,54 +112,6 @@ class RaiAcceptAPIApi
 	    // Restore the previous value
 	    ini_set( 'serialize_precision', $ini_value );
 		return $result;
-    }
-
-    public function token($username, $password)
-    {
-        $request = $this->tokenRequest(self::AUTH_FLOW, $username, $password, self::AUTH_CLIENT_ID);
-
-        return $this->processRequest($request, 'Raiaccept\RaiacceptApiClient\Model\AuthResponse', '\Raiaccept\RaiacceptApiClient\Model\ErrorResponse', true);
-    }
-
-    public function tokenRequest($auth_flow, $username, $password, $client_id)
-    {
-        // verify the required parameter '$auth_flow' is set
-        if ($auth_flow === null || (is_array($auth_flow) && count($auth_flow) === 0)) {
-            throw new SanitizedInvalidArgumentException('Missing the required parameter $auth_flow when calling tokenRequest');
-        }
-
-        // verify the required parameter '$username' is set
-        if ($username === null || (is_array($username) && count($username) === 0)) {
-            throw new SanitizedInvalidArgumentException('Missing the required parameter $username when calling tokenRequest');
-        }
-
-        // verify the required parameter '$password' is set
-        if ($password === null || (is_array($password) && count($password) === 0)) {
-            throw new SanitizedInvalidArgumentException('Missing the required parameter $password when calling tokenRequest');
-        }
-
-        // verify the required parameter '$client_id' is set
-        if ($client_id === null || (is_array($client_id) && count($client_id) === 0)) {
-            throw new SanitizedInvalidArgumentException('Missing the required parameter $client_id when calling tokenRequest');
-        }
-
-        $formParams = [
-            'AuthFlow' => $auth_flow,
-            'AuthParameters' => array(
-                'USERNAME' => $username,
-                'PASSWORD' => $password
-            ),
-            'ClientId' => $client_id,
-        ];
-        $httpBody = static::json_encode(ObjectSerializer::sanitizeForSerialization($formParams));
-        $headers = $this->getAuthRequestHeaders();
-
-        return new Request(
-            'POST',
-            self::AUTH_URL,
-            $headers,
-            $httpBody
-        );
     }
 
     public function createOrderEntry($access_token, $create_order_request)
